@@ -14,6 +14,7 @@ With the default five markets, a 14-game slate costs 70 credits. Listing games i
 Output (committed by the workflow):
   odds/fd_YYYY-MM-DD.txt   one line per leg:  YYYY-MM-DD, Player Name, STAT, N+, odds
   odds/latest.txt          everything from this run
+  odds/links_latest.json   FanDuel betslip link for each leg (same keys as the lines)
 """
 import json, os, sys, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
@@ -51,12 +52,13 @@ events, _ = get('/v4/sports/basketball_nba/events',
                 commenceTimeTo=(now + timedelta(hours=HOURS)).strftime('%Y-%m-%dT%H:%M:%SZ'))
 print(f"{len(events)} NBA games in the next {HOURS:g} hours (listing games is free)")
 
-legs, left = {}, None
+legs, links, left = {}, {}, None
 for ev in events:
     date = datetime.fromisoformat(ev['commence_time'].replace('Z', '+00:00')).astimezone(CT).strftime('%Y-%m-%d')
     try:
         data, left = get(f"/v4/sports/basketball_nba/events/{ev['id']}/odds",
-                         bookmakers='fanduel', markets=MARKETS, oddsFormat='american')
+                         bookmakers='fanduel', markets=MARKETS, oddsFormat='american',
+                         includeLinks='true', includeSids='true')
     except Exception as e:  # one bad game shouldn't sink the run
         print(f"  {ev.get('away_team')} @ {ev.get('home_team')}: failed ({e})")
         continue
@@ -80,6 +82,10 @@ for ev in events:
                 key = (date, player, stat, N)
                 if key not in legs or price > legs[key]:
                     legs[key] = int(price)
+                    q = urllib.parse.parse_qs(urllib.parse.urlparse(o.get('link') or '').query)
+                    links[key] = {'link': o.get('link'),
+                                  'marketId': (q.get('marketId') or [m.get('sid')])[0],
+                                  'selectionId': (q.get('selectionId') or [o.get('sid')])[0]}
                 n += 1
     print(f"  {ev.get('away_team')} @ {ev.get('home_team')}: {n} FanDuel lines")
 
@@ -94,4 +100,6 @@ for d in sorted({k[0] for k in legs}):
     with open(f'odds/fd_{d}.txt', 'w') as f:
         part = [fmt(k, v) for k, v in rows if k[0] == d]
         f.write(f"{header}\n" + '\n'.join(part) + '\n')
-print(f"Saved {len(rows)} legs. Credits remaining: {left}")
+with open('odds/links_latest.json', 'w') as f:
+    json.dump({f"{k[0]}|{k[1]}|{k[2]}|{k[3]}": v for k, v in links.items() if v.get('selectionId')}, f, separators=(',', ':'))
+print(f"Saved {len(rows)} legs ({sum(1 for v in links.values() if v.get('selectionId'))} with FanDuel betslip links). Credits remaining: {left}")
