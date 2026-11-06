@@ -1,0 +1,33 @@
+name: FanDuel NBA odds
+
+on:
+  workflow_dispatch:        # "Run workflow" button for on-demand pulls
+  schedule:
+    - cron: "30 22 * * *"   # 4:30 PM Chicago (CST) every day; each run costs ~5 credits per game
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fd-odds
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pull FanDuel alt lines from The Odds API
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python fetch_fd_odds.py
+      - name: Commit odds
+        run: |
+          git config user.name "fd-odds-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add odds
+          git diff --cached --quiet || git commit -m "FanDuel odds $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
