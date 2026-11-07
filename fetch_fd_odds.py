@@ -7,6 +7,7 @@ Env:
   HOURS_AHEAD    only price games starting within this many hours (default 30)
   MARKETS        comma list of markets (default: the five alt markets the Board uses)
   ODDS_API_BASE  override the API host (testing only)
+  MODE           'all' (default): game lines + player props; 'games': game lines only (about 2 credits)
 
 Cost: each game costs one credit per market (FanDuel only = one region).
 With the default five markets, a 14-game slate costs 70 credits. Listing games is free.
@@ -15,6 +16,7 @@ Output (committed by the workflow):
   odds/fd_YYYY-MM-DD.txt   one line per leg:  YYYY-MM-DD, Player Name, STAT, N+, odds
   odds/latest.txt          everything from this run
   odds/links_latest.json   FanDuel betslip link for each leg (same keys as the lines)
+  odds/games_latest.json   FanDuel spread and total for each game (blowout risk)
 """
 import json, os, sys, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
@@ -46,7 +48,31 @@ def get(path, **params):
         return json.loads(r.read().decode()), left
 
 
+MODE = os.environ.get('MODE', 'all').strip().lower() or 'all'
 now = datetime.now(timezone.utc)
+os.makedirs('odds', exist_ok=True)
+
+# Game lines first: one call covers every game (2 credits for spreads + totals, FanDuel only)
+games, _ = get('/v4/sports/basketball_nba/odds', bookmakers='fanduel', markets='spreads,totals', oddsFormat='american',
+               commenceTimeFrom=now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+               commenceTimeTo=(now + timedelta(hours=HOURS)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+glines = []
+for g in games:
+    row = {'date': datetime.fromisoformat(g['commence_time'].replace('Z', '+00:00')).astimezone(CT).strftime('%Y-%m-%d'),
+           'commence': g['commence_time'], 'home': g['home_team'], 'away': g['away_team']}
+    for bk in g.get('bookmakers', []):
+        for m in bk.get('markets', []):
+            for o in m.get('outcomes', []):
+                if m['key'] == 'spreads' and o.get('point') is not None:
+                    row['spread_home' if o['name'] == g['home_team'] else 'spread_away'] = o['point']
+                if m['key'] == 'totals' and o.get('name') == 'Over':
+                    row['total'] = o.get('point')
+    glines.append(row)
+with open('odds/games_latest.json', 'w') as f:
+    json.dump({'pulled': datetime.now(CT).strftime('%b %-d, %-I:%M %p CT'), 'games': glines}, f, separators=(',', ':'))
+print(f"Saved FanDuel spreads/totals for {len(glines)} games")
+if MODE == 'games':
+    sys.exit(0)
 events, _ = get('/v4/sports/basketball_nba/events',
                 commenceTimeFrom=now.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 commenceTimeTo=(now + timedelta(hours=HOURS)).strftime('%Y-%m-%dT%H:%M:%SZ'))
@@ -89,7 +115,6 @@ for ev in events:
                 n += 1
     print(f"  {ev.get('away_team')} @ {ev.get('home_team')}: {n} FanDuel lines")
 
-os.makedirs('odds', exist_ok=True)
 stamp = datetime.now(CT).strftime('%b %-d, %-I:%M %p CT')
 rows = sorted(legs.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2], kv[0][3]))
 fmt = lambda k, v: f"{k[0]}, {k[1]}, {k[2]}, {k[3]}+, {'+' if v > 0 else ''}{v}"

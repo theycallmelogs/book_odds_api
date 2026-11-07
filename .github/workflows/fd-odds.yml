@@ -2,6 +2,12 @@ name: FanDuel NBA odds
 
 on:
   workflow_dispatch:        # "Run workflow" button for on-demand pulls
+    inputs:
+      mode:
+        description: "all = game lines + player props; games = spreads/totals only (about 2 credits)"
+        default: all
+        type: choice
+        options: [all, games]
   schedule:
     - cron: "30 22 * * *"   # 4:30 PM Chicago (CST) every day; each run costs ~5 credits per game
 
@@ -23,6 +29,7 @@ jobs:
       - name: Pull FanDuel alt lines from The Odds API
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          MODE: ${{ inputs.mode || 'all' }}
         run: python fetch_fd_odds.py
       - name: Commit odds
         run: |
