@@ -8,8 +8,7 @@ on:
         default: all
         type: choice
         options: [all, games]
-  schedule:
-    - cron: "30 22 * * *"   # 4:30 PM Chicago (CST) every day; each run costs ~5 credits per game
+  # No schedule: pulls run only on request, so credits aren't spent on nights with no bet.
 
 permissions:
   contents: write

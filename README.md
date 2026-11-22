@@ -15,7 +15,7 @@ A GitHub Action pulls FanDuel's NBA alt lines (points, rebounds, assists, threes
 
 ## When it runs
 
-- Every day at 4:30 PM Chicago time, after FanDuel posts its alt ladders. Edit the `cron` line to change it (times are UTC: 22:30 UTC = 4:30 PM CST).
+- Only when you ask: Actions tab > FanDuel NBA odds > Run workflow (or ask Claude). There is no automatic schedule, so credits are only spent on nights you bet. A full pull costs about 5 credits per game.
 - Any time you click *Run workflow*.
 
 ## Cost
